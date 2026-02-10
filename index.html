@@ -9,7 +9,7 @@
 *{box-sizing:border-box;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;}
 body{margin:0;background:linear-gradient(180deg,#eef1f6,#dfe5ec);padding:18px;color:#111;}
 h1{text-align:center;font-weight:700;margin-bottom:8px;}
-.subtitle{text-align:center;color:#666;font-size:14px;margin-bottom:20px;}
+.subtitle{text-align:center;color:#666;font-size:14px;margin-bottom:12px;}
 .card{background:white;padding:16px;border-radius:22px;margin-bottom:16px;box-shadow:0 8px 24px rgba(0,0,0,0.08);}
 input,textarea,select{width:100%;padding:12px;margin-top:8px;border-radius:14px;border:1px solid #ddd;font-size:14px;background:#fafafa;}
 textarea{resize:none;height:60px;}
@@ -18,33 +18,25 @@ button{padding:12px;border-radius:14px;border:none;width:100%;margin-top:10px;fo
 .linkbtn{background:#34c759;color:white;}
 .deletebtn{background:#ff3b30;color:white;}
 .label{font-size:12px;color:#777;margin-top:6px;}
-.done {
-  opacity: 0.5;
-  text-decoration: line-through;
-}
-.checkbox {
-  width: 20px;
-  height: 20px;
-  margin-right: 8px;
-}
-.row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
+.done{opacity:0.5;text-decoration:line-through;}
+.checkbox{width:20px;height:20px;margin-right:8px;}
+.row{display:flex;align-items:center;gap:10px;}
+.topbar{display:flex;gap:10px;margin:0 0 14px 0;}
+.pill{flex:1;text-align:center;padding:10px 12px;border-radius:16px;background:rgba(255,255,255,.75);border:1px solid rgba(0,0,0,.06);}
 </style>
 </head>
 
 <body>
 
 <h1>台南之旅許願清單</h1>
+<div class="subtitle">把想去的放上去（共編版）</div>
 
-<div class="subtitle">把想去的放上去</div>
+<div class="topbar">
+  <div class="pill" id="status">狀態：載入中…</div>
+  <button class="pill" onclick="loadPlans()">重新整理</button>
+</div>
 
 <div id="list"></div>
-
-
 
 <div class="card">
 <b>新增行程</b>
@@ -56,7 +48,6 @@ button{padding:12px;border-radius:14px;border:none;width:100%;margin-top:10px;fo
   <option value="2026-02-13">Day 3 - 2/13</option>
 </select>
 
-
 <div class="label">時間</div>
 <input id="time" placeholder="14:30">
 
@@ -67,102 +58,216 @@ button{padding:12px;border-radius:14px;border:none;width:100%;margin-top:10px;fo
 <textarea id="note"></textarea>
 
 <div class="label">連結</div>
-<input id="link">
+<input id="link" placeholder="Google 地圖 / IG / 官網">
 
 <button class="addbtn" onclick="addItem()">新增</button>
 </div>
 
 <script>
-let plans = JSON.parse(localStorage.getItem("tripPlans")) || [];
+/** ✅ 只要改這兩行 */
+const API_URL = "https://script.google.com/macros/s/AKfycbyI1BKQYRQXQ9hDCTad9jPljlzrb8FEy9KrNwEGcj_ksrSevCbrYX8yCtooaSg3Pgnj/exec";
+const TOKEN   = "CHANGE_ME_TO_A_LONG_RANDOM_TOKEN_TO_OUR_TAINAN_TRIP";
+
+/**
+ * plans item shape in Sheet:
+ * id | date | time | text | note | link | done
+ */
+let plans = [];
+
+const date = document.getElementById("date");
+const time = document.getElementById("time");
+const text = document.getElementById("text");
+const note = document.getElementById("note");
+const link = document.getElementById("link");
+
+function setStatus(msg){ document.getElementById("status").textContent = "狀態：" + msg; }
+
+function escapeHtml(s){
+  return String(s ?? "").replace(/[&<>"']/g, c => ({
+    "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+  }[c]));
+}
+function escapeAttr(s){ return escapeHtml(s); }
 
 function toMinutes(t){
+  t = String(t || "");
   if(!t.includes(":")) return 9999;
-  const [h,m]=t.split(":").map(Number);
-  return h*60+m;
+  const [h,m] = t.split(":").map(Number);
+  return h*60 + m;
 }
 
 function sortPlans(){
   plans.sort((a,b)=>{
-    if(a.date !== b.date) return a.date.localeCompare(b.date);
+    // 未完成在上
+    if(!!a.done !== !!b.done) return (a.done?1:0) - (b.done?1:0);
+    // 先日期
+    if(String(a.date) !== String(b.date)) return String(a.date).localeCompare(String(b.date));
+    // 再時間
     return toMinutes(a.time) - toMinutes(b.time);
   });
 }
 
-function save(){
-  sortPlans();
-  localStorage.setItem("tripPlans",JSON.stringify(plans));
+async function apiGet(){
+  const url = API_URL + "?token=" + encodeURIComponent(TOKEN);
+  const res = await fetch(url, { method:"GET" });
+  return await res.json();
+}
+
+async function apiPost(payload){
+  const res = await fetch(API_URL, {
+    method:"POST",
+    headers:{ "Content-Type":"application/json" },
+    body: JSON.stringify(payload)
+  });
+  return await res.json();
+}
+
+async function loadPlans(){
+  try{
+    setStatus("同步中…");
+    const data = await apiGet();
+    if(!data.ok) throw new Error(data.error || "load failed");
+
+    plans = (data.items || []).map(p => ({
+      id: String(p.id || ""),
+      date: String(p.date || "2026-02-11"),
+      time: String(p.time || ""),
+      text: String(p.text || ""),
+      note: String(p.note || ""),
+      link: String(p.link || ""),
+      done: !!p.done
+    }));
+
+    sortPlans();
+    render();
+    setStatus("已同步");
+  }catch(e){
+    setStatus("同步失敗");
+    alert("讀取失敗：\n" + e);
+  }
 }
 
 function render(){
-    plans.forEach(p => { if(p.done === undefined) p.done = false; });
   sortPlans();
-  const list=document.getElementById("list");
-  list.innerHTML="";
+  const list = document.getElementById("list");
+  list.innerHTML = "";
+
   plans.forEach((p,i)=>{
-    const div=document.createElement("div");
-    div.className="card";
-    div.innerHTML=`
-    <div class="row">
-  <input type="checkbox" class="checkbox"
-    ${p.done?"checked":""}
-    onchange="plans[${i}].done=this.checked;save();render()">
-  <b class="${p.done?"done":""}">${p.text}</b>
-</div>
-    <div class="label">日期</div>
-    <select onchange="plans[${i}].date=this.value;save();render()">
-    <option value="2026-02-11" ${p.date==="2026-02-11"?"selected":""}>Day 1</option>
-    <option value="2026-02-12" ${p.date==="2026-02-12"?"selected":""}>Day 2</option>
-    <option value="2026-02-13" ${p.date==="2026-02-13"?"selected":""}>Day 3</option>
-    </select>
+    const div = document.createElement("div");
+    div.className = "card";
 
-    <div class="label">時間</div>
-    <input value="${p.time}" onchange="plans[${i}].time=this.value;save();render()">
+    div.innerHTML = `
+      <div class="row">
+        <input type="checkbox" class="checkbox"
+          ${p.done ? "checked" : ""}
+          onchange="toggleDone(${i}, this.checked)">
+        <b class="${p.done ? "done" : ""}">${escapeHtml(p.text)}</b>
+      </div>
 
-    <div class="label">標題</div>
-    <input value="${p.text}" onchange="plans[${i}].text=this.value;save()">
+      <div class="label">日期</div>
+      <select onchange="editField(${i}, 'date', this.value, true)">
+        <option value="2026-02-11" ${p.date==="2026-02-11"?"selected":""}>Day 1</option>
+        <option value="2026-02-12" ${p.date==="2026-02-12"?"selected":""}>Day 2</option>
+        <option value="2026-02-13" ${p.date==="2026-02-13"?"selected":""}>Day 3</option>
+      </select>
 
-    <div class="label">備註</div>
-    <textarea onchange="plans[${i}].note=this.value;save()">${p.note||""}</textarea>
+      <div class="label">時間</div>
+      <input value="${escapeAttr(p.time)}" onchange="editField(${i}, 'time', this.value, true)">
 
-    <div class="label">連結</div>
-    <input value="${p.link||""}" onchange="plans[${i}].link=this.value;save()">
+      <div class="label">標題</div>
+      <input value="${escapeAttr(p.text)}" onchange="editField(${i}, 'text', this.value)">
 
-    ${p.link?`<a href="${p.link}" target="_blank"><button class="linkbtn">前往</button></a>`:""}
+      <div class="label">備註</div>
+      <textarea onchange="editField(${i}, 'note', this.value)">${escapeHtml(p.note)}</textarea>
 
-    <button class="deletebtn" onclick="removeItem(${i})">刪除</button>
+      <div class="label">連結</div>
+      <input value="${escapeAttr(p.link)}" onchange="editField(${i}, 'link', this.value)">
+
+      ${p.link ? `<a href="${escapeAttr(p.link)}" target="_blank" rel="noreferrer">
+        <button class="linkbtn">前往</button>
+      </a>` : ""}
+
+      <button class="deletebtn" onclick="removeItem(${i})">刪除</button>
     `;
+
     list.appendChild(div);
   });
 }
 
-function addItem(){
-  if(!date.value||!time.value||!text.value) return;
-  plans.push({
-    date:date.value,
-    time:time.value,
-    text:text.value,
-    note:note.value,
-    link:link.value,
-    done:false
-  });
-  date.value=time.value=text.value=note.value=link.value="";
-  save();
-  render();
+async function addItem(){
+  const d = date.value.trim();
+  const t = time.value.trim();
+  const x = text.value.trim();
+  const n = note.value.trim();
+  const l = link.value.trim();
+
+  if(!d || !t || !x){
+    alert("至少要填 日期 / 時間 / 標題");
+    return;
+  }
+
+  const item = { id:"", date:d, time:t, text:x, note:n, link:l, done:false };
+
+  try{
+    setStatus("寫入中…");
+    const res = await apiPost({ token:TOKEN, action:"upsert", item });
+    if(!res.ok) throw new Error(res.error || "save failed");
+    date.value = "2026-02-11";
+    time.value = "";
+    text.value = "";
+    note.value = "";
+    link.value = "";
+    await loadPlans();
+  }catch(e){
+    setStatus("寫入失敗");
+    alert("新增失敗：\n" + e);
+  }
 }
 
-function removeItem(i){
-  plans.splice(i,1);
-  save();
-  render();
+async function editField(i, key, value, rerender=false){
+  plans[i][key] = value;
+  if(rerender) render();
+
+  try{
+    setStatus("寫入中…");
+    const res = await apiPost({ token:TOKEN, action:"upsert", item: plans[i] });
+    if(!res.ok) throw new Error(res.error || "save failed");
+    setStatus("已同步");
+  }catch(e){
+    setStatus("寫入失敗");
+    alert("更新失敗：\n" + e);
+    await loadPlans();
+  }
 }
 
-const date=document.getElementById("date");
-const time=document.getElementById("time");
-const text=document.getElementById("text");
-const note=document.getElementById("note");
-const link=document.getElementById("link");
+async function toggleDone(i, checked){
+  plans[i].done = checked;
+  render();
+  await editField(i, "done", checked, false);
+}
 
-render();
+async function removeItem(i){
+  const id = plans[i].id;
+  if(!id){
+    alert("這筆沒有 id，請重新整理後再刪");
+    return;
+  }
+  if(!confirm("確定刪除？")) return;
+
+  try{
+    setStatus("刪除中…");
+    const res = await apiPost({ token:TOKEN, action:"delete", id });
+    if(!res.ok) throw new Error(res.error || "delete failed");
+    await loadPlans();
+  }catch(e){
+    setStatus("刪除失敗");
+    alert("刪除失敗：\n" + e);
+  }
+}
+
+// 初次載入 + 類似共編：每 10 秒同步一次
+loadPlans();
+setInterval(loadPlans, 10000);
 </script>
 
 </body>
