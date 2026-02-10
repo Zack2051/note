@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<title>旅行行程</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<style>
+*{box-sizing:border-box;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;}
+body{margin:0;background:linear-gradient(180deg,#eef1f6,#dfe5ec);padding:18px;color:#111;}
+h1{text-align:center;font-weight:700;margin-bottom:8px;}
+.subtitle{text-align:center;color:#666;font-size:14px;margin-bottom:20px;}
+.card{background:white;padding:16px;border-radius:22px;margin-bottom:16px;box-shadow:0 8px 24px rgba(0,0,0,0.08);}
+input,textarea,select{width:100%;padding:12px;margin-top:8px;border-radius:14px;border:1px solid #ddd;font-size:14px;background:#fafafa;}
+textarea{resize:none;height:60px;}
+button{padding:12px;border-radius:14px;border:none;width:100%;margin-top:10px;font-size:14px;font-weight:600;cursor:pointer;}
+.addbtn{background:#111;color:white;}
+.linkbtn{background:#34c759;color:white;}
+.deletebtn{background:#ff3b30;color:white;}
+.label{font-size:12px;color:#777;margin-top:6px;}
+.done {
+  opacity: 0.5;
+  text-decoration: line-through;
+}
+.checkbox {
+  width: 20px;
+  height: 20px;
+  margin-right: 8px;
+}
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+</style>
+</head>
+
+<body>
+
+<h1>台南之旅許願清單</h1>
+
+<div class="subtitle">把想去的放上去</div>
+
+<div id="list"></div>
+
+
+
+<div class="card">
+<b>新增行程</b>
+
+<div class="label">日期</div>
+<select id="date">
+  <option value="2026-02-11">Day 1 - 2/11</option>
+  <option value="2026-02-12">Day 2 - 2/12</option>
+  <option value="2026-02-13">Day 3 - 2/13</option>
+</select>
+
+
+<div class="label">時間</div>
+<input id="time" placeholder="14:30">
+
+<div class="label">標題</div>
+<input id="text" placeholder="安平老街">
+
+<div class="label">備註</div>
+<textarea id="note"></textarea>
+
+<div class="label">連結</div>
+<input id="link">
+
+<button class="addbtn" onclick="addItem()">新增</button>
+</div>
+
+<script>
+let plans = JSON.parse(localStorage.getItem("tripPlans")) || [];
+
+function toMinutes(t){
+  if(!t.includes(":")) return 9999;
+  const [h,m]=t.split(":").map(Number);
+  return h*60+m;
+}
+
+function sortPlans(){
+  plans.sort((a,b)=>{
+    if(a.date !== b.date) return a.date.localeCompare(b.date);
+    return toMinutes(a.time) - toMinutes(b.time);
+  });
+}
+
+function save(){
+  sortPlans();
+  localStorage.setItem("tripPlans",JSON.stringify(plans));
+}
+
+function render(){
+    plans.forEach(p => { if(p.done === undefined) p.done = false; });
+  sortPlans();
+  const list=document.getElementById("list");
+  list.innerHTML="";
+  plans.forEach((p,i)=>{
+    const div=document.createElement("div");
+    div.className="card";
+    div.innerHTML=`
+    <div class="row">
+  <input type="checkbox" class="checkbox"
+    ${p.done?"checked":""}
+    onchange="plans[${i}].done=this.checked;save();render()">
+  <b class="${p.done?"done":""}">${p.text}</b>
+</div>
+    <div class="label">日期</div>
+    <select onchange="plans[${i}].date=this.value;save();render()">
+    <option value="2026-02-11" ${p.date==="2026-02-11"?"selected":""}>Day 1</option>
+    <option value="2026-02-12" ${p.date==="2026-02-12"?"selected":""}>Day 2</option>
+    <option value="2026-02-13" ${p.date==="2026-02-13"?"selected":""}>Day 3</option>
+    </select>
+
+    <div class="label">時間</div>
+    <input value="${p.time}" onchange="plans[${i}].time=this.value;save();render()">
+
+    <div class="label">標題</div>
+    <input value="${p.text}" onchange="plans[${i}].text=this.value;save()">
+
+    <div class="label">備註</div>
+    <textarea onchange="plans[${i}].note=this.value;save()">${p.note||""}</textarea>
+
+    <div class="label">連結</div>
+    <input value="${p.link||""}" onchange="plans[${i}].link=this.value;save()">
+
+    ${p.link?`<a href="${p.link}" target="_blank"><button class="linkbtn">前往</button></a>`:""}
+
+    <button class="deletebtn" onclick="removeItem(${i})">刪除</button>
+    `;
+    list.appendChild(div);
+  });
+}
+
+function addItem(){
+  if(!date.value||!time.value||!text.value) return;
+  plans.push({
+    date:date.value,
+    time:time.value,
+    text:text.value,
+    note:note.value,
+    link:link.value,
+    done:false
+  });
+  date.value=time.value=text.value=note.value=link.value="";
+  save();
+  render();
+}
+
+function removeItem(i){
+  plans.splice(i,1);
+  save();
+  render();
+}
+
+const date=document.getElementById("date");
+const time=document.getElementById("time");
+const text=document.getElementById("text");
+const note=document.getElementById("note");
+const link=document.getElementById("link");
+
+render();
+</script>
+
+</body>
+</html>
